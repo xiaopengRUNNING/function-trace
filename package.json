@@ -12,6 +12,38 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "function-map.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "function-map.foldCode",
+        "title": "Fold All Code",
+        "icon": {
+          "light": "media/light/allFold.svg",
+          "dark": "media/dark/allFold.svg"
+        }
+      },
+      {
+        "command": "function-map.unfoldCode",
+        "title": "Unfold All Code",
+        "icon": {
+          "light": "media/light/allUnfold.svg",
+          "dark": "media/dark/allUnfold.svg"
+        }
+      },
+      {
+        "command": "function-map.foldSpecificRange",
+        "title": "Fold Specific Range",
+        "icon": "$(fold)"
+      },
+      {
+        "command": "function-map.unfoldSpecificRange",
+        "title": "Unfold Specific Range",
+        "icon": "$(unfold)"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -25,16 +57,41 @@
       "functionMap": [
         {
           "id": "functionMapView",
-          "name": "Function Map View"
+          "name": "List"
+        },
+        {
+          "type": "webview",
+          "id": "functionMapPreview",
+          "name": "Preview"
         }
       ]
     },
-    "commands": [
-      {
-        "command": "function-map.helloWorld",
-        "title": "Hello World"
-      }
-    ]
+    "menus": {
+      "view/title": [
+        {
+          "command": "function-map.unfoldCode",
+          "when": "view === functionMapView && functionMapView.isAllFolded == true",
+          "group": "navigation"
+        },
+        {
+          "command": "function-map.foldCode",
+          "when": "view === functionMapView && functionMapView.isAllFolded == false",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "function-map.foldSpecificRange",
+          "when": "view === functionMapView && viewItem == unfoldedItem",
+          "group": "inline"
+        },
+        {
+          "command": "function-map.unfoldSpecificRange",
+          "when": "view === functionMapView && viewItem == foldedItem",
+          "group": "inline"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "pnpm run package",
@@ -48,17 +105,23 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.91.0",
     "@types/mocha": "^10.0.7",
     "@types/node": "20.x",
+    "@types/vscode": "^1.91.0",
     "@typescript-eslint/eslint-plugin": "^7.14.1",
     "@typescript-eslint/parser": "^7.11.0",
-    "eslint": "^8.57.0",
-    "typescript": "^5.4.5",
-    "ts-loader": "^9.5.1",
-    "webpack": "^5.92.1",
-    "webpack-cli": "^5.1.4",
     "@vscode/test-cli": "^0.0.9",
-    "@vscode/test-electron": "^2.4.0"
+    "@vscode/test-electron": "^2.4.0",
+    "eslint": "^8.57.0",
+    "tree-sitter-cli": "^0.22.6",
+    "tree-sitter-javascript": "^0.21.4",
+    "tree-sitter-typescript": "^0.21.2",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.4.5",
+    "webpack": "^5.92.1",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "web-tree-sitter": "^0.22.6"
   }
 }
