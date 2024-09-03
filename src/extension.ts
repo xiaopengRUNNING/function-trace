@@ -3,13 +3,14 @@ import Parser, { SyntaxNode } from 'web-tree-sitter';
 import * as vscode from 'vscode';
 import { ISyntaxNode } from './types/index.type';
 
+/** Check if it is a child */
 function isChildOf(parent: ISyntaxNode, child: ISyntaxNode) {
   return (
     child.syntaxNode.startIndex >= parent.syntaxNode.startIndex &&
     child.syntaxNode.endIndex <= parent.syntaxNode.endIndex
   );
 }
-
+/** Generate a Tree Structure */
 function buildFunctionTree(list: ISyntaxNode[]) {
   const rootFunctions: ISyntaxNode[] = [];
   const parentStack: ISyntaxNode[] = [];
@@ -28,31 +29,45 @@ function buildFunctionTree(list: ISyntaxNode[]) {
     }
 
     if (parentStack.length === 0) {
-      // 如果没有父节点，这是一个根节点
       rootFunctions.push(functionItem);
     } else {
-      // 如果有父节点，将当前函数添加为父节点的子节点
       parentStack[parentStack.length - 1].children?.push(functionItem);
     }
 
-    // 将当前节点推入堆栈，作为后续节点的父节点候选
     parentStack.push(functionItem);
   });
   return rootFunctions;
 }
-
+/** Iterate to get the starting and ending rows for all node areas */
+function getAllNodeStartAndEndRow(node?: ISyntaxNode[]) {
+  if (!node) {
+    return [];
+  }
+  const result: { start: number; end: number }[] = [];
+  node.forEach(item => {
+    result.push({
+      start: item.syntaxNode.startPosition.row,
+      end: item.syntaxNode.endPosition.row
+    });
+    if (item.children && item.children.length) {
+      result.push(...getAllNodeStartAndEndRow(item.children));
+    }
+  });
+  return result;
+}
+/** Fold or unfold all code */
 async function FoldOrUnfoldAllCode() {
   const editor = vscode.window.activeTextEditor;
   if (editor) {
-    // 获取当前可见的行范围
+    // Get the range of currently visible rows
     const initialVisibleRanges = editor.visibleRanges.map(
       range => new vscode.Range(range.start, range.end)
     );
 
-    // 执行折叠全部代码的命令
+    // Execute the command to collapse all the code
     await vscode.commands.executeCommand('editor.foldAll');
 
-    // 获取折叠后的可见范围
+    // Get the visible range post-folding
     const foldedVisibleRanges = editor.visibleRanges.map(
       range => new vscode.Range(range.start, range.end)
     );
@@ -64,6 +79,7 @@ async function FoldOrUnfoldAllCode() {
 
     if (isFullyFolded) {
       vscode.commands.executeCommand('editor.unfoldAll');
+      // update icon status
       vscode.commands.executeCommand(
         'setContext',
         'functionMapView.isAllFolded',
@@ -71,6 +87,7 @@ async function FoldOrUnfoldAllCode() {
       );
     } else {
       vscode.commands.executeCommand('editor.foldAll');
+      // update icon status
       vscode.commands.executeCommand(
         'setContext',
         'functionMapView.isAllFolded',
@@ -79,7 +96,8 @@ async function FoldOrUnfoldAllCode() {
     }
   }
 }
-function FoldOrUnfoldRangeCode(range: vscode.Range) {
+/** Fold or unfold specify range code */
+function FoldOrUnfoldRangeCode(range: vscode.Range, children?: ISyntaxNode[]) {
   const editor = vscode.window.activeTextEditor;
   if (editor) {
     const visibleRanges = editor.visibleRanges;
@@ -87,12 +105,23 @@ function FoldOrUnfoldRangeCode(range: vscode.Range) {
     let isRangeFolded = true;
 
     for (const visibleRange of visibleRanges) {
-      console.log(visibleRange.contains(range));
-
       if (visibleRange.contains(range)) {
         isRangeFolded = false; // If the target range is within the visible range, it indicates that it is not collapsed.
       }
     }
+
+    const childrenNode = getAllNodeStartAndEndRow(children);
+    childrenNode?.forEach(item => {
+      if (isRangeFolded) {
+        vscode.commands.executeCommand('editor.unfold', {
+          selectionLines: [item.start, item.end]
+        });
+      } else {
+        vscode.commands.executeCommand('editor.fold', {
+          selectionLines: [item.start, item.end]
+        });
+      }
+    });
 
     editor.selection = new vscode.Selection(range.start, range.end);
     if (isRangeFolded) {
@@ -102,6 +131,7 @@ function FoldOrUnfoldRangeCode(range: vscode.Range) {
     }
     return !isRangeFolded;
   }
+  return null;
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -152,23 +182,30 @@ export function activate(context: vscode.ExtensionContext) {
   // Fold specified code
   const foldRangeCode = vscode.commands.registerCommand(
     'function-map.foldSpecificRange',
-    item => {
-      const foldedStatus = FoldOrUnfoldRangeCode(item.range);
-      item.isFolded = foldedStatus;
-      item.updateContextValue();
-      functionMapProvider.refresh();
+    (item: FunctionMapItem) => {
+      FoldOrUnfoldRangeCode(item.range, item.children);
     }
   );
   // Unfold specified code
   const unfoldRangeCode = vscode.commands.registerCommand(
     'function-map.unfoldSpecificRange',
-    item => {
-      const foldedStatus = FoldOrUnfoldRangeCode(item.range);
-      item.isFolded = foldedStatus;
-      item.updateContextValue();
-      functionMapProvider.refresh();
+    (item: FunctionMapItem) => {
+      FoldOrUnfoldRangeCode(item.range, item.children);
     }
   );
+
+  // When the extension is deactivated, all registered commands, event listeners, etc. are automatically cleaned up
+  context.subscriptions.push(
+    revealRangeCommand,
+    foldCodeCommand,
+    unfoldCodeCommand,
+    foldRangeCode,
+    unfoldRangeCode
+  );
+
+  vscode.window.onDidChangeTextEditorVisibleRanges(() => {
+    functionMapProvider.refresh();
+  });
 
   const editor = vscode.window.activeTextEditor;
   let functionList: ISyntaxNode[] = [];
@@ -193,13 +230,6 @@ export function activate(context: vscode.ExtensionContext) {
 
       const visibleRanges = editor.visibleRanges;
 
-      console.log(
-        tree.rootNode.descendantsOfType([
-          'function_declaration',
-          'arrow_function'
-        ])
-      );
-
       functionList = tree.rootNode
         .descendantsOfType(['function_declaration', 'arrow_function'])
         .map(item => {
@@ -215,33 +245,33 @@ export function activate(context: vscode.ExtensionContext) {
               ? item.parent?.firstNamedChild?.text ?? 'no name'
               : item.firstNamedChild?.text ?? 'no name';
 
-          let isFolded = true;
-          for (const visibleRange of visibleRanges) {
-            if (visibleRange.contains(functionRange)) {
-              isFolded = false; // If the target range is within the visible range, it indicates that it is not collapsed.
-            }
-          }
-
           return {
             name,
-            isFolded,
+            isFolded: null,
             vscodeRange: functionRange,
             syntaxNode: item
           };
         });
 
-      functionMapProvider.updateFunctionList(buildFunctionTree(functionList));
+      functionMapProvider.updateFunctionList(
+        buildFunctionTree(functionList).map(item => {
+          let isFolded = null;
+          if (
+            item.syntaxNode.startPosition.row !==
+            item.syntaxNode.endPosition.row
+          ) {
+            isFolded = true;
+            for (const visibleRange of visibleRanges) {
+              if (visibleRange.contains(item.vscodeRange)) {
+                isFolded = false; // If the target range is within the visible range, it indicates that it is not collapsed.
+              }
+            }
+          }
+          return { ...item, isFolded };
+        })
+      );
     })();
   }
-
-  // When the extension is deactivated, all registered commands, event listeners, etc. are automatically cleaned up
-  context.subscriptions.push(
-    revealRangeCommand,
-    foldCodeCommand,
-    unfoldCodeCommand,
-    foldRangeCode,
-    unfoldRangeCode
-  );
 }
 
 // This method is called when your extension is deactivated
@@ -270,7 +300,7 @@ class FunctionMapProvider implements vscode.TreeDataProvider<FunctionMapItem> {
       return new FunctionMapItem(
         item.name,
         item.children && item.children?.length > 0
-          ? vscode.TreeItemCollapsibleState.Collapsed
+          ? vscode.TreeItemCollapsibleState.Expanded
           : vscode.TreeItemCollapsibleState.None,
         item.vscodeRange,
         item.isFolded,
@@ -281,24 +311,54 @@ class FunctionMapProvider implements vscode.TreeDataProvider<FunctionMapItem> {
   }
 
   getTreeItem(element: FunctionMapItem): vscode.TreeItem {
+    const visibleRanges = vscode.window.activeTextEditor?.visibleRanges;
+
+    let isFolded = null;
+    if (element.range.start.line !== element.range.end.line && visibleRanges) {
+      isFolded = true;
+      for (const visibleRange of visibleRanges) {
+        if (visibleRange.contains(element.range)) {
+          isFolded = false; // If the target range is within the visible range, it indicates that it is not collapsed.
+        }
+      }
+    }
+
+    element.updateContextValue(isFolded);
+
     return element;
   }
 
   getChildren(element?: FunctionMapItem): Thenable<FunctionMapItem[]> {
     if (element?.children && element.children.length > 0) {
+      const visibleRanges = vscode.window.activeTextEditor?.visibleRanges;
+
       return Promise.resolve(
-        element.children.map(
-          item =>
-            new FunctionMapItem(
-              item.name,
-              item.children && item.children?.length > 0
-                ? vscode.TreeItemCollapsibleState.Collapsed
-                : vscode.TreeItemCollapsibleState.None,
-              item.vscodeRange,
-              item.isFolded,
-              item.children
-            )
-        )
+        element.children.map(item => {
+          let isFolded = null;
+          if (
+            item.syntaxNode.startPosition.row !==
+            item.syntaxNode.endPosition.row
+          ) {
+            isFolded = true;
+            if (visibleRanges) {
+              for (const visibleRange of visibleRanges) {
+                if (visibleRange.contains(item.vscodeRange)) {
+                  isFolded = false; // If the target range is within the visible range, it indicates that it is not collapsed.
+                }
+              }
+            }
+          }
+
+          return new FunctionMapItem(
+            item.name,
+            item.children && item.children?.length > 0
+              ? vscode.TreeItemCollapsibleState.Collapsed
+              : vscode.TreeItemCollapsibleState.None,
+            item.vscodeRange,
+            isFolded,
+            item.children
+          );
+        })
       );
     }
     return Promise.resolve(this.data);
@@ -310,14 +370,14 @@ class FunctionMapItem extends vscode.TreeItem {
     public readonly label: string,
     public readonly collapsibleState: vscode.TreeItemCollapsibleState,
     public readonly range: vscode.Range,
-    public readonly isFolded: boolean,
-    public readonly children?: ISyntaxNode[]
+    public isFolded: boolean | null,
+    public children?: ISyntaxNode[]
   ) {
     super(label, collapsibleState);
 
     this.description = '这是一个Hello World函数1111111111111111111';
     this.tooltip = '这是一个Hello World函数';
-    this.contextValue = isFolded ? 'foldedItem' : 'unfoldedItem';
+    this.contextValue = this.formatFoldStatus(this.isFolded);
     this.children = children;
     this.command = {
       command: 'function-map.jumpCode',
@@ -331,10 +391,16 @@ class FunctionMapItem extends vscode.TreeItem {
     dark: path.join(__filename, '..', '..', 'media', 'dark', 'svg.svg')
   };
 
-  updateContextValue() {
-    console.log(this.isFolded);
+  formatFoldStatus(isFolded: boolean | null) {
+    return isFolded === null
+      ? 'singleline'
+      : isFolded
+      ? 'foldedItem'
+      : 'unfoldedItem';
+  }
 
-    this.contextValue = this.isFolded ? 'foldedItem' : 'unfoldedItem';
+  updateContextValue(isFolded: boolean | null) {
+    this.contextValue = this.formatFoldStatus(isFolded);
   }
 }
 

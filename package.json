@@ -14,10 +14,6 @@
   "contributes": {
     "commands": [
       {
-        "command": "function-map.helloWorld",
-        "title": "Hello World"
-      },
-      {
         "command": "function-map.foldCode",
         "title": "Fold All Code",
         "icon": {
@@ -35,12 +31,12 @@
       },
       {
         "command": "function-map.foldSpecificRange",
-        "title": "Fold Specific Range",
+        "title": "Collapse this code segment",
         "icon": "$(fold)"
       },
       {
         "command": "function-map.unfoldSpecificRange",
-        "title": "Unfold Specific Range",
+        "title": "Expand this code segment",
         "icon": "$(unfold)"
       }
     ],
