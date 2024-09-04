@@ -5,6 +5,7 @@ export interface ISyntaxNode {
   vscodeRange: Range;
   isFolded: boolean | null;
   name: string;
+  comment: string;
   syntaxNode: SyntaxNode;
   children?: ISyntaxNode[];
 }
