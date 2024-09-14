@@ -139,21 +139,23 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   const functionMapCore = debounce((document: vscode.TextDocument) => {
-    vscode.commands
-      .executeCommand('vscode.executeDocumentSymbolProvider', document.uri)
-      .then((value: unknown) => {
-        if (value) {
-          const symbols = value as DocumentSymbol[];
-          const result = filterFunctionList(symbols, document);
+    if (parser) {
+      vscode.commands
+        .executeCommand('vscode.executeDocumentSymbolProvider', document.uri)
+        .then((value: unknown) => {
+          if (value) {
+            const symbols = value as DocumentSymbol[];
+            const result = filterFunctionList(symbols, document);
 
-          const tree = buildFunctionTree(
-            result.sort((a: DocumentSymbol, b: DocumentSymbol) =>
-              a.range.start.compareTo(b.range.start)
-            )
-          );
-          functionMapProvider.updateFunctionList(tree);
-        }
-      });
+            const tree = buildFunctionTree(
+              result.sort((a: DocumentSymbol, b: DocumentSymbol) =>
+                a.range.start.compareTo(b.range.start)
+              )
+            );
+            functionMapProvider.updateFunctionList(tree);
+          }
+        });
+    }
   }, 500);
 
   const changeDiagnostics = vscode.languages.onDidChangeDiagnostics(event => {
