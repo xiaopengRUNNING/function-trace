@@ -1,5 +1,5 @@
 import path from 'path';
-import Parser, { SyntaxNode } from 'web-tree-sitter';
+import Parser from 'web-tree-sitter';
 import * as vscode from 'vscode';
 import { IDocumentSymbol } from './types/index.type';
 import {
@@ -164,6 +164,15 @@ export function activate(context: vscode.ExtensionContext) {
       functionMapCore(activeEditor.document);
     }
   });
+  const changeActiveDocument = vscode.window.onDidChangeActiveTextEditor(
+    event => {
+      if (event?.document) {
+        parseCore(event.document);
+      } else {
+        functionMapProvider.updateFunctionList([]);
+      }
+    }
+  );
 
   // When the extension is deactivated, all registered commands, event listeners, etc. are automatically cleaned up
   context.subscriptions.push(
@@ -172,7 +181,8 @@ export function activate(context: vscode.ExtensionContext) {
     unfoldCodeCommand,
     foldRangeCodeCommand,
     unfoldRangeCodeCommand,
-    changeDiagnostics
+    changeDiagnostics,
+    changeActiveDocument
   );
 
   Parser.init().then(async () => {
