@@ -1,9 +1,13 @@
 {
-  "name": "function-map",
-  "displayName": "function map",
+  "name": "function-trace",
+  "displayName": "Function Trace",
   "description": "Conveniently manage a vast number of functions in files to enhance development efficiency.",
   "publisher": "PengXinCheng",
   "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xiaopengRUNNING/function-trace.git"
+  },
   "engines": {
     "vscode": "^1.91.0"
   },
