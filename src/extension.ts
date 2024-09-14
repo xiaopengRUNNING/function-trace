@@ -1,68 +1,43 @@
 import path from 'path';
 import Parser, { SyntaxNode } from 'web-tree-sitter';
 import * as vscode from 'vscode';
-import { ISyntaxNode } from './types/index.type';
+import { IDocumentSymbol } from './types/index.type';
 import {
   buildFunctionTree,
+  debounce,
   FoldOrUnfoldAllCode,
   FoldOrUnfoldRangeCode,
   formatComment,
-  getArrowFunctionDefinition
+  judgeIsFunction
 } from './utils';
+import { DocumentSymbol, SymbolKind } from 'vscode';
 
-function parserTypescript(
-  document: vscode.TextDocument,
-  parser: Parser
-): ISyntaxNode[] {
-  const tree = parser.parse(document.getText());
-
-  const functionNodes = tree.rootNode.descendantsOfType([
-    'function_declaration',
-    'arrow_function'
-  ]);
-
-  const functionList: ISyntaxNode[] = [];
-
-  functionNodes.forEach(item => {
-    let node = item;
-    if (item.type === 'arrow_function' && item.parent?.type === 'arguments') {
-      return;
-    }
-
-    if (item.type === 'arrow_function') {
-      node = getArrowFunctionDefinition(item) ?? item;
-    }
-
-    const functionComment = tree.rootNode.descendantForPosition({
-      row: node.startPosition.row - 1,
-      column: node.startPosition.column
-    });
-    const functionRange = new vscode.Range(
-      new vscode.Position(node.startPosition.row, node.startPosition.column),
-      new vscode.Position(node.endPosition.row, node.endPosition.column)
-    );
-    const functionName =
-      item.type === 'arrow_function'
-        ? item.parent?.firstNamedChild?.text ?? 'no name'
-        : item.firstNamedChild?.text ?? 'no name';
-
-    functionList.push({
-      name: functionName,
-      isFolded: null,
-      vscodeRange: functionRange,
-      syntaxNode: node,
-      comment:
-        functionComment.type === 'comment'
-          ? formatComment(functionComment.text)
-          : ''
-    });
-  });
-
-  return buildFunctionTree(functionList);
-}
+const languageJudgeFunctionMap: Record<
+  string,
+  (item: IDocumentSymbol, text: string) => boolean
+> = {
+  typescript: (item: IDocumentSymbol, text: string) =>
+    (item.kind === SymbolKind.Function && !item.name.includes('() callback')) ||
+    (item.kind === SymbolKind.Variable && judgeIsFunction(text)),
+  javascript: (item: IDocumentSymbol, text: string) =>
+    (item.kind === SymbolKind.Function && !item.name.includes('() callback')) ||
+    (item.kind === SymbolKind.Variable && judgeIsFunction(text)),
+  typescriptreact: (item: IDocumentSymbol, text: string) =>
+    (item.kind === SymbolKind.Function &&
+      !['() callback', '<function>'].some(text => item.name.includes(text))) ||
+    (item.kind === SymbolKind.Variable &&
+      (/^use.*\(\) callback$/.test(item.children[0]?.name) ||
+        judgeIsFunction(text))),
+  javascriptreact: (item: IDocumentSymbol, text: string) =>
+    (item.kind === SymbolKind.Function &&
+      !['() callback', '<function>'].some(text => item.name.includes(text))) ||
+    (item.kind === SymbolKind.Variable &&
+      (/^use.*\(\) callback$/.test(item.children[0]?.name) ||
+        judgeIsFunction(text)))
+};
 
 export function activate(context: vscode.ExtensionContext) {
-  // 初始化全部折叠图标状态
+  // Initialize the state of all collapse icon
   vscode.commands.executeCommand(
     'setContext',
     'functionMapView.isAllFolded',
@@ -123,16 +98,70 @@ export function activate(context: vscode.ExtensionContext) {
 
   let parser: Parser;
 
-  const visibleRangesChangeEvent =
-    vscode.window.onDidChangeTextEditorVisibleRanges(() => {
-      functionMapProvider.refresh();
-    });
-  const saveDocumentEvent = vscode.workspace.onDidSaveTextDocument(
-    (document: vscode.TextDocument) => {
-      const functionTree = parserTypescript(document, parser);
-      functionMapProvider.updateFunctionList(functionTree);
+  const filterFunctionList = (
+    tree: DocumentSymbol[],
+    doc: vscode.TextDocument
+  ) => {
+    if (!tree || !tree.length) {
+      return [];
     }
-  );
+    const parserTree = parser.parse(doc.getText());
+    const languageId = doc.languageId;
+    let result: IDocumentSymbol[] = [];
+    let list = [...tree];
+    let index = 0;
+
+    while (index <= list.length - 1) {
+      const item = list[index];
+      if (item.children && item.children.length) {
+        list.push(...item.children);
+      }
+
+      if (
+        languageJudgeFunctionMap[languageId]?.(item, doc.getText(item.range))
+      ) {
+        const functionComment = parserTree.rootNode.descendantForPosition({
+          row: item.range.start.line - 1,
+          column: doc.lineAt(item.range.start.line - 1).range.end.character - 1
+        });
+        result.push({
+          ...item,
+          comment:
+            functionComment.type === 'comment'
+              ? formatComment(functionComment.text)
+              : ''
+        });
+      }
+      index++;
+    }
+
+    return result;
+  };
+
+  const functionMapCore = debounce((document: vscode.TextDocument) => {
+    vscode.commands
+      .executeCommand('vscode.executeDocumentSymbolProvider', document.uri)
+      .then((value: unknown) => {
+        if (value) {
+          const symbols = value as DocumentSymbol[];
+          const result = filterFunctionList(symbols, document);
+
+          const tree = buildFunctionTree(
+            result.sort((a: DocumentSymbol, b: DocumentSymbol) =>
+              a.range.start.compareTo(b.range.start)
+            )
+          );
+          functionMapProvider.updateFunctionList(tree);
+        }
+      });
+  }, 500);
+
+  const changeDiagnostics = vscode.languages.onDidChangeDiagnostics(event => {
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor && event.uris.includes(activeEditor.document.uri)) {
+      functionMapCore(activeEditor.document);
+    }
+  });
 
   // When the extension is deactivated, all registered commands, event listeners, etc. are automatically cleaned up
   context.subscriptions.push(
@@ -141,40 +170,49 @@ export function activate(context: vscode.ExtensionContext) {
     unfoldCodeCommand,
     foldRangeCodeCommand,
     unfoldRangeCodeCommand,
-    visibleRangesChangeEvent,
-    saveDocumentEvent
+    changeDiagnostics
   );
 
   Parser.init().then(async () => {
     const editor = vscode.window.activeTextEditor;
     if (editor) {
-      const document = editor.document;
-      const languageId = document.languageId;
-
-      const absolute = path.join(
-        context.extensionPath,
-        'parsers',
-        `tree-sitter-${languageId}.wasm`
-      );
-      const wasm = path.relative(process.cwd(), absolute);
-
-      let functionTree: ISyntaxNode[] = [];
-      switch (languageId) {
-        case 'typescript':
-          const Lang = await Parser.Language.load(wasm);
-          parser = new Parser();
-          parser.setLanguage(Lang);
-
-          functionTree = parserTypescript(document, parser);
-          break;
-
-        default:
-          break;
-      }
-
-      functionMapProvider.updateFunctionList(functionTree);
+      parseCore(editor.document);
     }
   });
+
+  async function parseCore(document: vscode.TextDocument) {
+    const languageId = document.languageId;
+    const absolute = path.join(
+      context.extensionPath,
+      'parsers',
+      `tree-sitter-${languageId}.wasm`
+    );
+    const wasm = path.relative(process.cwd(), absolute);
+
+    let Lang;
+    switch (languageId) {
+      case 'typescript':
+        Lang = await Parser.Language.load(wasm);
+        parser = new Parser();
+        parser.setLanguage(Lang);
+        break;
+
+      case 'javascript':
+        Lang = await Parser.Language.load(wasm);
+        parser = new Parser();
+        parser.setLanguage(Lang);
+        break;
+
+      case 'typescriptreact':
+        Lang = await Parser.Language.load(wasm);
+        parser = new Parser();
+        parser.setLanguage(Lang);
+        break;
+
+      default:
+        break;
+    }
+  }
 }
 
 // This method is called when your extension is deactivated
@@ -198,15 +236,15 @@ class FunctionMapProvider implements vscode.TreeDataProvider<FunctionMapItem> {
     this._onDidChangeTreeData.fire();
   }
 
-  updateFunctionList(list: ISyntaxNode[]) {
+  updateFunctionList(list: IDocumentSymbol[]) {
     this.data = list.map(item => {
       return new FunctionMapItem(
         item.name,
         item.children && item.children?.length > 0
           ? vscode.TreeItemCollapsibleState.Expanded
           : vscode.TreeItemCollapsibleState.None,
-        item.vscodeRange,
-        item.isFolded,
+        item.range,
+        item.range.isSingleLine,
         item.children,
         item.comment
       );
@@ -215,51 +253,20 @@ class FunctionMapProvider implements vscode.TreeDataProvider<FunctionMapItem> {
   }
 
   getTreeItem(element: FunctionMapItem): vscode.TreeItem {
-    const visibleRanges = vscode.window.activeTextEditor?.visibleRanges;
-
-    let isFolded = null;
-    if (element.range.start.line !== element.range.end.line && visibleRanges) {
-      isFolded = true;
-      for (const visibleRange of visibleRanges) {
-        if (visibleRange.contains(element.range)) {
-          isFolded = false; // If the target range is within the visible range, it indicates that it is not collapsed.
-        }
-      }
-    }
-
-    element.updateContextValue(isFolded);
-
     return element;
   }
 
   getChildren(element?: FunctionMapItem): Thenable<FunctionMapItem[]> {
     if (element?.children && element.children.length > 0) {
-      const visibleRanges = vscode.window.activeTextEditor?.visibleRanges;
-
       return Promise.resolve(
         element.children.map(item => {
-          let isFolded = null;
-          if (
-            item.syntaxNode.startPosition.row !==
-            item.syntaxNode.endPosition.row
-          ) {
-            isFolded = true;
-            if (visibleRanges) {
-              for (const visibleRange of visibleRanges) {
-                if (visibleRange.contains(item.vscodeRange)) {
-                  isFolded = false; // If the target range is within the visible range, it indicates that it is not collapsed.
-                }
-              }
-            }
-          }
-
           return new FunctionMapItem(
             item.name,
             item.children && item.children?.length > 0
               ? vscode.TreeItemCollapsibleState.Collapsed
               : vscode.TreeItemCollapsibleState.None,
-            item.vscodeRange,
-            isFolded,
+            item.range,
+            item.range.isSingleLine,
             item.children,
             item.comment
           );
@@ -275,15 +282,15 @@ class FunctionMapItem extends vscode.TreeItem {
     public readonly label: string,
     public readonly collapsibleState: vscode.TreeItemCollapsibleState,
     public readonly range: vscode.Range,
-    public isFolded: boolean | null,
-    public children?: ISyntaxNode[],
+    public isSingleLine: boolean,
+    public children?: IDocumentSymbol[],
     public description?: string
   ) {
     super(label, collapsibleState);
 
     this.description = description;
     this.tooltip = description;
-    this.contextValue = this.formatFoldStatus(this.isFolded);
+    this.contextValue = isSingleLine ? 'singleline' : 'foldItem';
     this.children = children;
     this.command = {
       command: 'function-map.jumpCode',
@@ -296,18 +303,6 @@ class FunctionMapItem extends vscode.TreeItem {
     light: path.join(__filename, '..', '..', 'media', 'light', 'svg.svg'),
     dark: path.join(__filename, '..', '..', 'media', 'dark', 'svg.svg')
   };
-
-  formatFoldStatus(isFolded: boolean | null) {
-    return isFolded === null
-      ? 'singleline'
-      : isFolded
-      ? 'foldedItem'
-      : 'unfoldedItem';
-  }
-
-  updateContextValue(isFolded: boolean | null) {
-    this.contextValue = this.formatFoldStatus(isFolded);
-  }
 }
 
 class FunctionMapPreviewProvider implements vscode.WebviewViewProvider {

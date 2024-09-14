@@ -32,12 +32,18 @@
       {
         "command": "function-map.foldSpecificRange",
         "title": "Collapse this code segment",
-        "icon": "$(fold)"
+        "icon": {
+          "light": "media/light/fold.svg",
+          "dark": "media/dark/fold.svg"
+        }
       },
       {
         "command": "function-map.unfoldSpecificRange",
         "title": "Expand this code segment",
-        "icon": "$(unfold)"
+        "icon": {
+          "light": "media/light/fold.svg",
+          "dark": "media/dark/fold.svg"
+        }
       }
     ],
     "viewsContainers": {
@@ -77,13 +83,8 @@
       ],
       "view/item/context": [
         {
-          "command": "function-map.foldSpecificRange",
-          "when": "view === functionMapView && viewItem == unfoldedItem",
-          "group": "inline"
-        },
-        {
           "command": "function-map.unfoldSpecificRange",
-          "when": "view === functionMapView && viewItem == foldedItem",
+          "when": "view === functionMapView && viewItem == foldItem",
           "group": "inline"
         }
       ]
