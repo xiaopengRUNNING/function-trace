@@ -1,6 +1,40 @@
 import * as vscode from 'vscode';
-import { SyntaxNode } from 'web-tree-sitter';
-import { ISyntaxNode } from '../types/index.type';
+import { IDocumentSymbol } from '../types/index.type';
+import { DocumentSymbol } from 'vscode';
+
+export function judgeIsFunction(text: string): boolean {
+  const functionRegex =
+    /\b\w+\s*=\s*(\([^)]*\)|\w+)\s*=>\s*{?|function\s*\([^)]*\)\s*{?/;
+  return functionRegex.test(text);
+}
+
+export function buildFunctionTree(list: DocumentSymbol[]) {
+  const rootFunctions: DocumentSymbol[] = [];
+  const parentStack: DocumentSymbol[] = [];
+
+  list.forEach(node => {
+    const functionItem = {
+      ...node,
+      children: []
+    };
+
+    while (
+      parentStack.length > 0 &&
+      !parentStack[parentStack.length - 1].range.contains(node.range)
+    ) {
+      parentStack.pop();
+    }
+
+    if (parentStack.length === 0) {
+      rootFunctions.push(functionItem);
+    } else {
+      parentStack[parentStack.length - 1].children?.push(functionItem);
+    }
+
+    parentStack.push(functionItem);
+  });
+  return rootFunctions;
+}
 
 /** Format function comments */
 export function formatComment(comment: string) {
@@ -25,62 +59,16 @@ export function formatComment(comment: string) {
   return '';
 }
 
-/** Get the full definition of the arrow function */
-export function getArrowFunctionDefinition(node: SyntaxNode) {
-  let result: SyntaxNode | null = node;
-  while (result?.type && result?.type !== 'lexical_declaration') {
-    result = result?.parent;
-  }
-  return result;
-}
-
-/** Check if it is a child */
-export function isChildOf(parent: ISyntaxNode, child: ISyntaxNode) {
-  return (
-    child.syntaxNode.startIndex >= parent.syntaxNode.startIndex &&
-    child.syntaxNode.endIndex <= parent.syntaxNode.endIndex
-  );
-}
-
-/** Generate a Tree Structure */
-export function buildFunctionTree(list: ISyntaxNode[]) {
-  const rootFunctions: ISyntaxNode[] = [];
-  const parentStack: ISyntaxNode[] = [];
-
-  list.forEach(node => {
-    const functionItem = {
-      ...node,
-      children: []
-    };
-
-    while (
-      parentStack.length > 0 &&
-      !isChildOf(parentStack[parentStack.length - 1], node)
-    ) {
-      parentStack.pop();
-    }
-
-    if (parentStack.length === 0) {
-      rootFunctions.push(functionItem);
-    } else {
-      parentStack[parentStack.length - 1].children?.push(functionItem);
-    }
-
-    parentStack.push(functionItem);
-  });
-  return rootFunctions;
-}
-
 /** Iterate to get the starting and ending rows for all node areas */
-export function getAllNodeStartAndEndRow(node?: ISyntaxNode[]) {
+export function getAllNodeStartAndEndRow(node?: IDocumentSymbol[]) {
   if (!node) {
     return [];
   }
   const result: { start: number; end: number }[] = [];
   node.forEach(item => {
     result.push({
-      start: item.syntaxNode.startPosition.row,
-      end: item.syntaxNode.endPosition.row
+      start: item.range.start.line,
+      end: item.range.end.line
     });
     if (item.children && item.children.length) {
       result.push(...getAllNodeStartAndEndRow(item.children));
@@ -134,7 +122,7 @@ export async function FoldOrUnfoldAllCode() {
 /** Fold or unfold specify range code */
 export function FoldOrUnfoldRangeCode(
   range: vscode.Range,
-  children?: ISyntaxNode[]
+  children?: IDocumentSymbol[]
 ) {
   const editor = vscode.window.activeTextEditor;
   if (editor) {
@@ -170,4 +158,21 @@ export function FoldOrUnfoldRangeCode(
     return !isRangeFolded;
   }
   return null;
+}
+
+export function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: ReturnType<typeof setTimeout> | null;
+
+  return function (this: ThisParameterType<T>, ...args: Parameters<T>): void {
+    const context = this;
+
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+
+    timeout = setTimeout(() => func.apply(context, args), wait);
+  };
 }
