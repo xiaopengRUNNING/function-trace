@@ -4,6 +4,7 @@
   "description": "Conveniently manage a vast number of functions in files to enhance development efficiency.",
   "publisher": "PengXinCheng",
   "version": "1.0.0",
+  "icon": "media/logo.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/xiaopengRUNNING/function-trace.git"
