@@ -2,7 +2,8 @@
   "name": "function-map",
   "displayName": "function map",
   "description": "Conveniently manage a vast number of functions in files to enhance development efficiency.",
-  "version": "0.0.1",
+  "publisher": "PengXinCheng",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.91.0"
   },
