@@ -85,14 +85,16 @@ export function activate(context: vscode.ExtensionContext) {
   const foldRangeCodeCommand = vscode.commands.registerCommand(
     'function-map.foldSpecificRange',
     (item: FunctionMapItem) => {
-      FoldOrUnfoldRangeCode(item.range, item.children);
+      vscode.commands.executeCommand('function-map.jumpCode', item.range);
+      FoldOrUnfoldRangeCode(item.range);
     }
   );
   // Unfold specified code command
   const unfoldRangeCodeCommand = vscode.commands.registerCommand(
     'function-map.unfoldSpecificRange',
     (item: FunctionMapItem) => {
-      FoldOrUnfoldRangeCode(item.range, item.children);
+      vscode.commands.executeCommand('function-map.jumpCode', item.range);
+      FoldOrUnfoldRangeCode(item.range);
     }
   );
 

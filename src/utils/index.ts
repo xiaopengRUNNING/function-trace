@@ -120,42 +120,31 @@ export async function FoldOrUnfoldAllCode() {
 }
 
 /** Fold or unfold specify range code */
-export function FoldOrUnfoldRangeCode(
-  range: vscode.Range,
-  children?: IDocumentSymbol[]
-) {
+export async function FoldOrUnfoldRangeCode(range: vscode.Range) {
   const editor = vscode.window.activeTextEditor;
   if (editor) {
-    const visibleRanges = editor.visibleRanges;
+    // Get the range of currently visible rows
+    const initialVisibleRanges = editor.visibleRanges.map(
+      range => new vscode.Range(range.start, range.end)
+    );
 
-    let isRangeFolded = true;
-
-    for (const visibleRange of visibleRanges) {
-      if (visibleRange.contains(range)) {
-        isRangeFolded = false; // If the target range is within the visible range, it indicates that it is not collapsed.
-      }
-    }
-
-    const childrenNode = getAllNodeStartAndEndRow(children);
-    childrenNode?.forEach(item => {
-      if (isRangeFolded) {
-        vscode.commands.executeCommand('editor.unfold', {
-          selectionLines: [item.start, item.end]
-        });
-      } else {
-        vscode.commands.executeCommand('editor.fold', {
-          selectionLines: [item.start, item.end]
-        });
-      }
+    // Execute the command to collapse all the code
+    await vscode.commands.executeCommand('editor.unfold', {
+      selectionLines: [range.start.line, range.end.line]
     });
 
-    editor.selection = new vscode.Selection(range.start, range.end);
-    if (isRangeFolded) {
-      vscode.commands.executeCommand('editor.unfold');
-    } else {
+    // Get the visible range post-folding
+    const foldedVisibleRanges = editor.visibleRanges.map(
+      range => new vscode.Range(range.start, range.end)
+    );
+
+    const isEqual = foldedVisibleRanges.every((foldedRange, index) => {
+      const initialRange = initialVisibleRanges[index];
+      return foldedRange.isEqual(initialRange);
+    });
+    if (isEqual) {
       vscode.commands.executeCommand('editor.fold');
     }
-    return !isRangeFolded;
   }
   return null;
 }
