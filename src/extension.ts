@@ -8,7 +8,8 @@ import {
   FoldOrUnfoldAllCode,
   FoldOrUnfoldRangeCode,
   formatComment,
-  judgeIsFunction
+  judgeIsFunction,
+  judgeIsReactFunction
 } from './utils';
 import { DocumentSymbol, SymbolKind } from 'vscode';
 
@@ -17,23 +18,13 @@ const languageJudgeFunctionMap: Record<
   (item: IDocumentSymbol, text: string) => boolean
 > = {
   typescript: (item: IDocumentSymbol, text: string) =>
-    (item.kind === SymbolKind.Function && !item.name.includes('() callback')) ||
-    (item.kind === SymbolKind.Variable && judgeIsFunction(text)),
+    judgeIsFunction(item, text),
   javascript: (item: IDocumentSymbol, text: string) =>
-    (item.kind === SymbolKind.Function && !item.name.includes('() callback')) ||
-    (item.kind === SymbolKind.Variable && judgeIsFunction(text)),
+    judgeIsFunction(item, text),
   typescriptreact: (item: IDocumentSymbol, text: string) =>
-    (item.kind === SymbolKind.Function &&
-      !['() callback', '<function>'].some(text => item.name.includes(text))) ||
-    (item.kind === SymbolKind.Variable &&
-      (/^use.*\(\) callback$/.test(item.children[0]?.name) ||
-        judgeIsFunction(text))),
+    judgeIsReactFunction(item, text),
   javascriptreact: (item: IDocumentSymbol, text: string) =>
-    (item.kind === SymbolKind.Function &&
-      !['() callback', '<function>'].some(text => item.name.includes(text))) ||
-    (item.kind === SymbolKind.Variable &&
-      (/^use.*\(\) callback$/.test(item.children[0]?.name) ||
-        judgeIsFunction(text)))
+    judgeIsReactFunction(item, text)
 };
 
 export function activate(context: vscode.ExtensionContext) {

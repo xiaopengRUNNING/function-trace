@@ -1,11 +1,32 @@
 import * as vscode from 'vscode';
 import { IDocumentSymbol } from '../types/index.type';
-import { DocumentSymbol } from 'vscode';
+import { DocumentSymbol, SymbolKind } from 'vscode';
 
-export function judgeIsFunction(text: string): boolean {
+export function judgeIsFunction(item: IDocumentSymbol, text: string): boolean {
+  if (
+    item.kind === SymbolKind.Function &&
+    !/\(.*\)\s+callback/.test(item.name) &&
+    item.name !== '<function>'
+  ) {
+    return true;
+  }
   const functionRegex =
     /\b\w+\s*=\s*(\([^)]*\)|\w+)\s*=>\s*{?|function\s*\([^)]*\)\s*{?/;
   return functionRegex.test(text);
+}
+
+export function judgeIsReactFunction(
+  item: IDocumentSymbol,
+  text: string
+): boolean {
+  const result = judgeIsFunction(item, text);
+  if (result) {
+    return true;
+  }
+  return (
+    item.kind === SymbolKind.Variable &&
+    /^use.*\(\) callback$/.test(item.children[0]?.name)
+  );
 }
 
 export function buildFunctionTree(list: DocumentSymbol[]) {
