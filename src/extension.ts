@@ -88,6 +88,22 @@ export function activate(context: vscode.ExtensionContext) {
       FoldOrUnfoldRangeCode(item.range);
     }
   );
+  // Copy code
+  const copyCodeCommand = vscode.commands.registerCommand(
+    'function-trace.copy',
+    async (item: FunctionMapItem) => {
+      const editor = vscode.window.activeTextEditor;
+      if (editor) {
+        const text = editor.document.getText(item.range);
+        try {
+          await vscode.env.clipboard.writeText(text);
+          vscode.window.showInformationMessage('Text copied to clipboard!');
+        } catch (err) {
+          vscode.window.showErrorMessage('Failed to copy text to clipboard.');
+        }
+      }
+    }
+  );
 
   let parser: Parser;
 
@@ -175,7 +191,8 @@ export function activate(context: vscode.ExtensionContext) {
     foldRangeCodeCommand,
     unfoldRangeCodeCommand,
     changeDiagnostics,
-    changeActiveDocument
+    changeActiveDocument,
+    copyCodeCommand
   );
 
   Parser.init().then(async () => {

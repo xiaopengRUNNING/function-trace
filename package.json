@@ -3,7 +3,7 @@
   "displayName": "Function Trace",
   "description": "Conveniently manage a vast number of functions in files to enhance development efficiency.",
   "publisher": "PengXinCheng",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "icon": "media/logo.png",
   "repository": {
     "type": "git",
@@ -50,6 +50,14 @@
           "light": "media/light/fold.svg",
           "dark": "media/dark/fold.svg"
         }
+      },
+      {
+        "command": "function-trace.copy",
+        "title": "Copy",
+        "icon": {
+          "light": "media/light/copy.svg",
+          "dark": "media/dark/copy.svg"
+        }
       }
     ],
     "viewsContainers": {
@@ -88,6 +96,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "function-trace.copy",
+          "when": "view === functionMapView",
+          "group": "inline"
+        },
         {
           "command": "function-map.unfoldSpecificRange",
           "when": "view === functionMapView && viewItem == foldItem",
